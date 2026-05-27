@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trang Tạo Mã 2FA (TOTP)</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 400px; 
+            margin: 50px auto; 
+            padding: 20px; 
+            border: 1px solid #ccc; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        input { 
+            width: 100%; 
+            padding: 10px; 
+            margin: 10px 0; 
+            box-sizing: border-box; 
+            font-family: monospace;
+            font-size: 16px;
+        }
+        #result { 
+            font-size: 48px; 
+            font-weight: bold; 
+            text-align: center; 
+            margin-top: 20px; 
+            color: #007bff; 
+            letter-spacing: 5px;
+        }
+        .timer-container {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #555;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #e9ecef;
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #28a745;
+            width: 100%;
+            transition: width 1s linear, background-color 0.3s;
+        }
+        /* Đổi màu đỏ khi sắp hết giờ */
+        .progress-fill.warning {
+            background-color: #dc3545;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsSHA/3.2.0/sha.js"></script>
+</head>
+<body>
+
+    <h2>Tạo Mã 2FA</h2>
+    
+    <label for="secret">Nhập Secret Key (Base32):</label>
+    <input type="text" id="secret" placeholder="Ví dụ: JBSWY3DPEHPK3PXP" oninput="generateTOTP()" autocomplete="off">
+    
+    <div id="result">------</div>
+
+    <div class="timer-container">
+        Mã sẽ làm mới sau: <strong id="countdown">30</strong> giây
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress"></div>
+        </div>
+    </div>
+
+    <script>
+        // Hàm giải mã Base32 sang Hex
+        function base32tohex(base32) {
+            const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+            let bits = "";
+            let hex = "";
+            for (let i = 0; i < base32.length; i++) {
+                const val = base32chars.indexOf(base32.charAt(i).toUpperCase());
+                if (val === -1) continue;
+                bits += val.toString(2).padStart(5, '0');
+            }
+            for (let i = 0; i + 4 <= bits.length; i += 4) {
+                const chunk = bits.substr(i, 4);
+                hex = hex + parseInt(chunk, 2).toString(16);
+            }
+            return hex;
+        }
+
+        // Hàm tạo mã TOTP
+        function generateTOTP() {
+            let secret = document.getElementById('secret').value.replace(/\s+/g, '');
+            if (!secret) {
+                document.getElementById('result').innerText = "------";
+                return;
+            }
+
+            try {
+                const key = base32tohex(secret);
+                const epoch = Math.round(new Date().getTime() / 1000.0);
+                const time = Math.floor(epoch / 30).toString(16).padStart(16, '0');
+
+                const shaObj = new jsSHA("SHA-1", "HEX");
+                shaObj.setHMACKey(key, "HEX");
+                shaObj.update(time);
+                const hmac = shaObj.getHMAC("HEX");
+
+                const offset = parseInt(hmac.substring(hmac.length - 1), 16);
+                let otp = (parseInt(hmac.substr(offset * 2, 8), 16) & 0x7fffffff) + "";
+                otp = otp.substr(otp.length - 6, 6).padStart(6, '0');
+
+                // Thêm khoảng trắng ở giữa cho dễ nhìn (VD: 123 456)
+                document.getElementById('result').innerText = otp.substring(0, 3) + " " + otp.substring(3, 6);
+            } catch (err) {
+                document.getElementById('result').innerText = "Lỗi!";
+            }
+        }
+
+        // Vòng lặp đếm ngược thời gian và cập nhật UI
+        setInterval(() => {
+            const epoch = Math.floor(new Date().getTime() / 1000.0);
+            const remaining = 30 - (epoch % 30); // Tính số giây còn lại trong chu kỳ 30s
+            
+            // Cập nhật số giây đếm ngược
+            document.getElementById('countdown').innerText = remaining;
+            
+            // Cập nhật thanh tiến trình (Progress Bar)
+            const progressFill = document.getElementById('progress');
+            const progressWidth = (remaining / 30) * 100;
+            progressFill.style.width = progressWidth + '%';
+
+            // Đổi màu thanh tiến trình sang đỏ nếu thời gian còn dưới 5 giây
+            if (remaining <= 5) {
+                progressFill.classList.add('warning');
+            } else {
+                progressFill.classList.remove('warning');
+            }
+
+            // Tự động làm mới mã khi chu kỳ mới bắt đầu (còn 30s)
+            if (remaining === 30) {
+                generateTOTP();
+            }
+        }, 1000);
+
+        // Chạy hàm tạo mã một lần ngay khi trang vừa tải xong
+        generateTOTP();
+    </script>
+</body>
+  </html>
